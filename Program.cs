@@ -254,8 +254,12 @@ namespace Interop
         /// Creates a rule string tied to the current Windows user and which is transferable
         /// across machines (backed up in AD).
         /// </summary>
-        internal static string GetDefaultProtectionDescriptorString()
+        internal static string GetDefaultProtectionDescriptorString(bool bLocalOnly = false)
         {
+            if (bLocalOnly)
+            {
+                return "LOCAL=user";
+            }
             // Creates a SID=... protection descriptor string for the current user.
             // Reminder: DPAPI:NG provides only encryption, not authentication.
             using (var currentIdentity = WindowsIdentity.GetCurrent())
@@ -525,7 +529,7 @@ namespace Interop
         private static unsafe byte[] ProtectWithDpapiNGCore(byte* pbData, uint cbData)
         {
             NCryptDescriptorHandle protectionDescriptorHandle; // no longer a parameter like in ASP.NET
-            var ntstatus = NCryptCreateProtectionDescriptor(GetDefaultProtectionDescriptorString(), (uint)0, out protectionDescriptorHandle);
+            var ntstatus = NCryptCreateProtectionDescriptor(GetDefaultProtectionDescriptorString(true), (uint)0, out protectionDescriptorHandle);
             ThrowExceptionForNCryptStatus(ntstatus);
 
             Debug.Assert(protectionDescriptorHandle != null);
@@ -542,7 +546,7 @@ namespace Interop
                 pMemPara: IntPtr.Zero,
                 hWnd: IntPtr.Zero,
                 ppbProtectedBlob: out protectedData,
-                pcbProtectedBlob: out cbProtectedData);
+                pcbProtectedBlob: out cbProtectedData); // getting 0x80090034 (NTE_ENCRYPTION_FAILURE) here with my SID? ...
             ThrowExceptionForNCryptStatus(ntstatus);
             AssertSafeHandleIsValid(protectedData);
 
@@ -649,8 +653,15 @@ namespace AmnesicDPAPI
             {
                 return Array.Empty<byte>();
             }
-            byte[] buffer = ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, ProtectionScope);
-            return buffer;
+            try
+            {
+                byte[] buffer = ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, ProtectionScope);
+                return buffer;
+            }
+            catch (Exception)
+            {
+            }
+            return Array.Empty<byte>();
         }
 
         public static string Decrypt(byte[] value)
@@ -673,8 +684,15 @@ namespace AmnesicDPAPI
             {
                 return Array.Empty<byte>();
             }
-            byte[] buffer = NCrypt.ProtectWithDpapiNG(Encoding.UTF8.GetBytes(value));
-            return buffer;
+            try
+            {
+                byte[] buffer = NCrypt.ProtectWithDpapiNG(Encoding.UTF8.GetBytes(value));
+                return buffer;
+            }
+            catch (Exception)
+            {
+            }
+            return Array.Empty<byte>();
         }
 
         public static string Decrypt(byte[] value)
@@ -871,7 +889,7 @@ namespace AmnesicDPAPI
 
             Trace.WriteLine($"Encrypting: {dataToEncrypt}");
             byte[] encryptedBytesDotNet = NET.Encrypt(dataToEncrypt);
-            byte[] encryptedByestDPAPICNG = DPAPING.Encrypt(dataToEncrypt);
+            byte[] encryptedBytesDPAPICNG = DPAPING.Encrypt(dataToEncrypt);
 
             Thread eventThread = new Thread(delegate ()
             {
@@ -884,10 +902,13 @@ namespace AmnesicDPAPI
             {
                 try
                 {
-                    var decryptedStringDotNet = NET.Decrypt(encryptedBytesDotNet);
-                    if (decryptedStringDotNet is not null)
+                    if (encryptedBytesDotNet.Length > 0)
                     {
-                        Trace.WriteLine("Failed decryption via System.Security.Cryptography.ProtectedData (classic DPAPI)");
+                        var decryptedStringDotNet = NET.Decrypt(encryptedBytesDotNet);
+                        if (decryptedStringDotNet is not null)
+                        {
+                            Trace.WriteLine("Decrypted successfully via System.Security.Cryptography.ProtectedData (classic DPAPI)");
+                        }
                     }
                 }
                 catch (CryptographicException ex)
@@ -896,10 +917,13 @@ namespace AmnesicDPAPI
                 }
                 try
                 {
-                    var decryptedStringDPAPICNG = DPAPING.Decrypt(encryptedByestDPAPICNG);
-                    if (decryptedStringDPAPICNG is not null)
+                    if (encryptedBytesDPAPICNG.Length > 0)
                     {
-                        Trace.WriteLine("Failed decryption via DPAPI NG (CNG DPAPI)");
+                        var decryptedStringDPAPICNG = DPAPING.Decrypt(encryptedBytesDPAPICNG);
+                        if (decryptedStringDPAPICNG is not null)
+                        {
+                            Trace.WriteLine("Decrypted successfully via DPAPI NG (CNG DPAPI)");
+                        }
                     }
                 }
                 catch (Exception ex)
