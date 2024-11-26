@@ -37,6 +37,7 @@ Additionally since around Windows 8 there is a so-called CNG DPAPI (aka DPAPI NG
 
 * https://www.synacktiv.com/ressources/univershell_2017_dpapi.pdf
 * https://tierzerosecurity.co.nz/2024/01/22/data-protection-windows-api.html
+  * successor post: https://tierzerosecurity.co.nz/2024/11/26/data-protection-windows-api-revisited.html
 * https://github.com/rxwx/chlonium
 
 ## Support tickets with Microsoft
